@@ -1,0 +1,41 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.10.35027.167
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "rotoVRController", "rotoVRController\rotoVRController.csproj", "{F84ED82C-9B58-422D-BB77-28CC64EFDDAD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "rotoUSB", "RotoUSB\rotoUSB.csproj", "{0C9B5B0E-AB38-460E-BC31-8EF146C2039B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F84ED82C-9B58-422D-BB77-28CC64EFDDAD}.Debug|x64.ActiveCfg = Debug|x64
+		{F84ED82C-9B58-422D-BB77-28CC64EFDDAD}.Debug|x64.Build.0 = Debug|x64
+		{F84ED82C-9B58-422D-BB77-28CC64EFDDAD}.Debug|x86.ActiveCfg = Debug|x86
+		{F84ED82C-9B58-422D-BB77-28CC64EFDDAD}.Debug|x86.Build.0 = Debug|x86
+		{F84ED82C-9B58-422D-BB77-28CC64EFDDAD}.Release|x64.ActiveCfg = Release|x64
+		{F84ED82C-9B58-422D-BB77-28CC64EFDDAD}.Release|x64.Build.0 = Release|x64
+		{F84ED82C-9B58-422D-BB77-28CC64EFDDAD}.Release|x86.ActiveCfg = Release|x86
+		{F84ED82C-9B58-422D-BB77-28CC64EFDDAD}.Release|x86.Build.0 = Release|x86
+		{0C9B5B0E-AB38-460E-BC31-8EF146C2039B}.Debug|x64.ActiveCfg = Debug|x64
+		{0C9B5B0E-AB38-460E-BC31-8EF146C2039B}.Debug|x64.Build.0 = Debug|x64
+		{0C9B5B0E-AB38-460E-BC31-8EF146C2039B}.Debug|x86.ActiveCfg = Debug|x86
+		{0C9B5B0E-AB38-460E-BC31-8EF146C2039B}.Debug|x86.Build.0 = Debug|x86
+		{0C9B5B0E-AB38-460E-BC31-8EF146C2039B}.Release|x64.ActiveCfg = Release|x64
+		{0C9B5B0E-AB38-460E-BC31-8EF146C2039B}.Release|x64.Build.0 = Release|x64
+		{0C9B5B0E-AB38-460E-BC31-8EF146C2039B}.Release|x86.ActiveCfg = Release|x86
+		{0C9B5B0E-AB38-460E-BC31-8EF146C2039B}.Release|x86.Build.0 = Release|x86
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {B4BDF548-136C-4C43-BE7B-88C72C4228F7}
+	EndGlobalSection
+EndGlobal
