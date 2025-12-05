@@ -1,7 +1,25 @@
-﻿using MaterialSkin;
+﻿/*
+ * 
+ *  Edward Chan
+ * 
+ * Revision history:
+ * 
+ *          V1.1 -   Add  Safety Stop / Emergency Button Event supported and handling
+ *               -   Add  RunMode  and Error Mode event handler
+ *               -   Add  Idle mode 
+ *               
+ * 
+ */
+
+
+
+using MaterialSkin;
 using MaterialSkin.Controls;
 
 using rotoUSB;
+using System.CodeDom.Compiler;
+using System.Reflection.Emit;
+using System.Windows.Forms;
 
 
 namespace rotoVRController
@@ -23,6 +41,113 @@ namespace rotoVRController
         private System.Windows.Forms.Timer delayTimer;
         private int delayMilliseconds = 1000;
 
+        // UI update timer
+        private System.Windows.Forms.Timer uiTimer;
+
+
+        // v1.1
+        // Declare errorPanel to show error message dialog
+        private Panel errorPanel;
+        private MaterialLabel errorLabel;
+        private bool isErrorRecover = false;
+
+
+        public void CreateErrorPanel()
+        {
+            errorPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(128, Color.Black),
+                Enabled = true
+            };
+
+            var errorCard = new MaterialSkin.Controls.MaterialCard
+            {
+                Size = new Size(400, 120),
+                BackColor = Color.White
+
+            };
+            errorCard.Location = new Point(
+                (this.ClientSize.Width - errorCard.Width) / 2,
+                (this.ClientSize.Height - errorCard.Height) / 2
+            );
+
+            /*
+            // Override paint to apply custom background
+            errorCard.Paint += (s, e) =>
+            {
+                e.Graphics.Clear(Color.LightPink);  
+            };
+            */
+
+            // System error icon (use a built-in or custom image)
+            PictureBox errorIcon = new PictureBox
+            {
+                Image = Properties.Resources.tick,   // SystemIcons.Error.ToBitmap(), // uses tick icon
+                SizeMode = PictureBoxSizeMode.StretchImage,
+                Size = new Size(48, 48),
+                Location = new Point(20, 30)
+            };
+
+            errorLabel = new MaterialSkin.Controls.MaterialLabel
+            {
+                Text = "",
+                AutoSize = false,
+                Width = 300,
+                Height = 60,
+                Location = new Point(80, 30)
+            };
+
+            errorCard.Controls.Add(errorIcon);
+            errorCard.Controls.Add(errorLabel);
+            errorPanel.Controls.Add(errorCard);
+            this.Controls.Add(errorPanel);
+            errorPanel.Visible = false;
+
+        }
+
+        public void ShowError(string message)
+        {
+            // if (errorPanel != null) return;
+
+            if (errorPanel.InvokeRequired)
+            {
+                // Executes on the UI thread synchronously.
+                errorPanel.Invoke(new Action(() =>
+                {
+                    errorLabel.Text = message;
+                    errorPanel.Visible = true;
+                    errorPanel.BringToFront();
+                }));
+            }
+            else
+            {
+                errorLabel.Text = message;
+                errorPanel.Visible = true;
+                errorPanel.BringToFront();
+            }
+
+
+        }
+
+        public void CloseError()
+        {
+
+            if (errorPanel.InvokeRequired)
+            {
+                // Executes on the UI thread synchronously.
+                errorPanel.Invoke(new Action(() =>
+                {
+                    errorPanel.Visible = false;
+                }));
+            }
+            else
+            {
+                errorPanel.Visible = false;
+            }
+
+        }
+
 
 
         public RotoMainForm()
@@ -40,22 +165,93 @@ namespace rotoVRController
 
 
 
-
-
             roto.LoadUSBLibrary();
+
+            // v1.1
+            roto.ErrorModeChanged += Roto_ErrorModeChanged;
+            roto.RunModeChanged += Roto_RunModeChanged;
+
 
             // Enable the console debug in Visual Studio
             //    : Project -> rotoVRController properties -> Application -> Output Type -> Console Application
 
-             roto.EnableConsoleDebug();
-             this.Text = "rotoVR Window Control V1.0 (Debug Build)";
+            roto.EnableConsoleDebug();
+            // this.Text = "rotoVR Window Control V1.1 (Debug Build)";
 
-            //this.Text = "rotoVR Window Control V1.0";
+            this.Text = "rotoVR Window Control V1.1";
 
             InitBaseUIEvent();
             initRumbleUIEvent();
 
+            CreateErrorPanel();
+            cbxEnableModeSound.Checked = true;
 
+
+
+        }
+
+
+
+
+
+
+
+        private void Roto_RunModeChanged(int runMode)
+        {
+
+            if (this.InvokeRequired)
+            {
+                // Executes on the UI thread synchronously.
+                this.Invoke(new Action(() =>
+                {
+                    updateModeUI(runMode);
+                }));
+            }
+            else
+            {
+                updateModeUI(runMode);
+            }
+
+        }
+
+
+
+
+
+        // Error Mode triggered --> pause! ---> untriggered --> resume!
+        private void Roto_ErrorModeChanged(int errorMode)
+        {
+
+            Console.WriteLine("Error Mode Triggered: " + errorMode.ToString("X"));
+
+            if (errorMode == RotoChair.ERROR_NONE)                     // Resume Normal
+            {
+
+                Console.WriteLine("Resume normal ");
+                // Before resuming object following, we need to align back the base degre with the object
+                // otherwise, the chair will drift immediately.
+                if (rotoStatus.RunMode == RotoChair.MODE_OBJECT_FOLLOW)
+                {
+                    rotoStatus = roto.GetRotoStatus();
+                    Console.WriteLine("Try set slider degree back to  " + rotoStatus.BaseDegree);
+                    roto.SetObjectFollowDegree((int)rotoStatus.BaseDegree, 100);
+                    sliderBaseAngle.Value = (int)rotoStatus.BaseDegree;
+                }
+
+                CloseError();
+
+                isErrorRecover = true;
+            }
+            else if (errorMode == RotoChair.ERROR_EMERGENCY_STOP)      // Emergency stop button triggered
+            {
+                ShowError("Safety Sensor / Emergency Button has been Triggered");
+
+
+                Console.WriteLine("Emergency Stop =");
+            
+                player.StopSound();
+                isErrorRecover = false;
+            }
 
         }
 
@@ -87,7 +283,7 @@ namespace rotoVRController
 
             // prevent other controls from processing the key
             return true;
-            // return base.ProcessCmdKey(ref msg, keyData);
+
         }
 
 
@@ -100,46 +296,37 @@ namespace rotoVRController
         }
 
 
-        private RotoStatus? _lastStatus;
-        // UI update thread
+        // UI update thread - this simulates Graphic Update Loop
         private void UpdateUI(object sender, EventArgs e)
         {
-            var status = roto.GetRotoStatus();
-            if (status == null) return;
+            string strMode = "";
 
-            // Only proceed if something changed (simple reference or value diff check)
-            if (_lastStatus != null &&
-                _lastStatus.RunMode == status.RunMode &&
-                Math.Abs(_lastStatus.BaseDegree - status.BaseDegree) < 0.001 &&
-                _lastStatus.FirmwareVersion == status.FirmwareVersion &&
-                _lastStatus.USBConnected == status.USBConnected &&
-                _lastStatus.MaxPowerLimit == status.MaxPowerLimit &&
-                _lastStatus.CockpitDegreeLimit == status.CockpitDegreeLimit)
-            {
-                return;
-            }
+            // read  the latest roto status from RotoChair 
+            rotoStatus = roto.GetRotoStatus();
 
-            var modeText = status.RunMode switch
-            {
-                RotoChair.MODE_FREE => "FREE",
-                RotoChair.MODE_COCKPIT => "COCKPIT",
-                RotoChair.MODE_OBJECT_FOLLOW => "OBJECT FOLLOW",
-                _ => "IDLE"
-            };
+            // update UI elements
+            if (rotoStatus.RunMode == RotoChair.MODE_FREE)
+                strMode = "FREE";
+            else if (rotoStatus.RunMode == RotoChair.MODE_COCKPIT)
+                strMode = "COCKPIT";
+            else if (rotoStatus.RunMode == RotoChair.MODE_OBJECT_FOLLOW)
+                strMode = "OBJECT FOLLOW";
+            else
+                strMode = "IDLE";
 
-            lblBaseDegree.Text      = $"Base Angle(°): {status.BaseDegree:F2}";
-            lblHTDegree.Text        = ""; // placeholder
-            lblMode.Text            = $"Mode: {modeText}";
-            lblFirmwareVer.Text     = $"Firmware Ver: {status.FirmwareVersion}";
-            lblConnection.Text      = status.USBConnected ? "USB Connected" : "USB Disconnected";
-            lblMaxPower.Text        = $"Max Power(%): {status.MaxPowerLimit}";
-            lblCockpitDegree.Text   = $"Cockpit Angle(°): {status.CockpitDegreeLimit}";
-
-            _lastStatus = (RotoStatus)status.Clone(); // assuming Clone implemented
+            lblBaseDegree.Text = "Base Angle(°): " + rotoStatus.BaseDegree.ToString("F2");
+            // lblHTDegree.Text = "Headtracker Angle(°): " + rotoStatus.HTDegree;
+            lblHTDegree.Text = "";
+            lblMode.Text = "Mode: " + strMode;
+            lblFirmwareVer.Text = "Firmware Ver: " + rotoStatus.FirmwareVersion;
+            lblConnection.Text = setConditionText(rotoStatus.USBConnected, "USB Connected", "");
+            lblMaxPower.Text = "Max Power(%): " + rotoStatus.MaxPowerLimit;
+            lblCockpitDegree.Text = "Cockpit Angle(°): " + rotoStatus.CockpitDegreeLimit;
         }
 
-        // UI update timer
-        private System.Windows.Forms.Timer uiTimer;
+
+
+
 
 
 
@@ -210,15 +397,31 @@ namespace rotoVRController
         {
 
             roto.Connect();
-            updateChairMode();
+            // updateChairMode();
+
+            /*
+            // For UI Test
+            ShowError("Emergency Stop Triggered." + System.Environment.NewLine + "Please release the stop button to resume the chair control .");
+            System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
+            timer.Interval = 4000;
+            timer.Start();
+            timer.Tick += Timer_Tick;
+            */
         }
 
+        /*
+         private void Timer_Tick(object? sender, EventArgs e)
+         {
+
+
+             CloseError();
+         }
+      */
 
         // Disconnect the roto Chair USB connection
         private void btnDisconnect_Click(object sender, EventArgs e)
         {
             roto.Disconnect();
-
         }
 
 
@@ -250,7 +453,31 @@ namespace rotoVRController
         }
 
 
+        private void setChairMode(int runMode)
+        {
 
+            // updateModeUI(runMode);
+            switch (runMode)
+            {
+                case RotoChair.MODE_IDLE:
+                    roto.SetIdleMode();
+                    break;
+                case RotoChair.MODE_FREE:
+                    roto.SetFreeMode();
+                    break;
+
+                case RotoChair.MODE_COCKPIT:
+                    roto.SetCockpitMode(cockpitDegreeLimit);
+                    break;
+
+                case RotoChair.MODE_OBJECT_FOLLOW:
+                    roto.SetObjectFollowMode();
+                    break;
+
+            }
+        }
+
+        /*
         private void updateChairMode()
         {
 
@@ -268,47 +495,36 @@ namespace rotoVRController
                 roto.SetCockpitMode(cockpitDegreeLimit);
             }
         }
+        */
 
-
-        // set the chair running mode
-        private void tabControl_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            updateChairMode();
-        }
 
         private void btnSetZero_Click(object sender, EventArgs e)
         {
             sliderBaseAngle.Value = 0;
             roto.SetZeroBaseCommand();
 
-
-
         }
 
 
-        //important: only in Object follow mode, the base angle can be set
+
         private void sliderBaseAngle_onValueChanged(object sender, int newValue)
         {
-
-            if (rotoStatus != null &&  rotoStatus.RunMode == RotoChair.MODE_OBJECT_FOLLOW)
+            if (rotoStatus.RunMode == RotoChair.MODE_OBJECT_FOLLOW)
             {
-                Console.WriteLine("Set OF angle to " + newValue);
-                roto.SetObjectFollowDegree(newValue);
+                Console.WriteLine("Slider Set OF angle to " + newValue);
+                roto.SetObjectFollowDegree(newValue, 100);
             }
         }
 
 
         private void moveLeft()
         {
-
             if (rotoStatus.RunMode == RotoChair.MODE_FREE)
                 roto.MoveChair(-sliderSpeed.Value);
             else if (rotoStatus.RunMode == RotoChair.MODE_COCKPIT)
                 roto.MoveChair(-sliderCockpitSpeed.Value);
-
-
-
         }
+
 
 
         private void moveRight()
@@ -349,9 +565,89 @@ namespace rotoVRController
             moveRight();
         }
 
-        private void materialCard1_Paint(object sender, PaintEventArgs e)
+
+        private void RotoMainForm_Load(object sender, EventArgs e)
         {
 
+        }
+
+
+        private void ResetButtonStyles()
+        {
+            btnIdle.UseAccentColor = false;
+            btnFree.UseAccentColor = false;
+            btnCockpit.UseAccentColor = false;
+            btnObjectFollow.UseAccentColor = false;
+        }
+
+        private void updateModeUI(int currentMode)
+        {
+            ResetButtonStyles();
+
+            switch (currentMode)
+            {
+                case RotoChair.MODE_IDLE:
+                    btnIdle.UseAccentColor = true;
+                    tabControl.SelectedIndex = 0;
+                    break;
+                case RotoChair.MODE_FREE:
+                    btnFree.UseAccentColor = true;
+                    tabControl.SelectedIndex = 2;
+                    break;
+                case RotoChair.MODE_COCKPIT:
+                    btnCockpit.UseAccentColor = true;
+                    tabControl.SelectedIndex = 3;
+                    break;
+                case RotoChair.MODE_OBJECT_FOLLOW:
+                    btnObjectFollow.UseAccentColor = true;
+                    tabControl.SelectedIndex = 1;
+                    btnSetZero.PerformClick();
+                    break;
+            }
+        }
+
+
+
+
+        private void btnIdle_Click(object sender, EventArgs e)
+        {
+            //ResetButtonStyles();
+            //btnIdle.UseAccentColor = true;
+            //tabControl.SelectedIndex = 0;
+            setChairMode(RotoChair.MODE_IDLE);
+        }
+
+
+        private void btnFree_Click(object sender, EventArgs e)
+        {
+            setChairMode(RotoChair.MODE_FREE);
+            //updateModeUI(RotoChair.MODE_FREE);
+        }
+
+
+        private void btnObjectFollow_Click(object sender, EventArgs e)
+        {
+            setChairMode(RotoChair.MODE_OBJECT_FOLLOW);
+        }
+
+
+        private void btnCockpit_Click(object sender, EventArgs e)
+        {
+            setChairMode(RotoChair.MODE_COCKPIT);
+        }
+
+
+
+        private void cbxEnableResume_CheckedChanged(object sender, EventArgs e)
+        {
+            roto.EnableModeResume(cbxEnableResume.Checked);
+        }
+
+
+
+        private void cbxEnableModeSound_CheckedChanged(object sender, EventArgs e)
+        {
+            roto.EnableModeSound( cbxEnableModeSound.Checked);
         }
     }
 }

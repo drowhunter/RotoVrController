@@ -8,9 +8,19 @@
   </PropertyGroup>
 
   <!-- Keep the files as content (None), but custom copy logic will handle placing them in TargetDir -->
+    <ItemGroup Condition="'$(Platform)' == 'x64'">
+	    <None Update="Libs\x64\HIDApi.dll">
+		    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	    </None>
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(Platform)' == 'x86'">
+	    <None Update="Libs\x86\HIDApi.dll">
+		    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	    </None>
+    </ItemGroup>
   <ItemGroup>
-    <None Include="Libs\x64\HIDApi.dll" />
-    <None Include="Libs\x86\HIDApi.dll" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
   </ItemGroup>
 
   <!-- Copy architecture-specific HIDApi.dll into $(TargetDir) -->

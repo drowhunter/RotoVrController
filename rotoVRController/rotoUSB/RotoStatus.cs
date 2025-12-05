@@ -1,6 +1,4 @@
 ﻿
-
-
 namespace rotoUSB
 {
     public class RotoStatus : ICloneable

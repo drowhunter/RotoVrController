@@ -5,8 +5,6 @@ using System.Runtime.InteropServices;
 
 namespace rotoUSB
 {
-
-
     // Static class for interacting with USB-HID devices using native Windows API calls
     public class USBNative : IUSBNative
     {
@@ -363,15 +361,7 @@ namespace rotoUSB
             {
                 lock (_lockUSBR)
                 {
-                    try
-                    {
-                        success = ReadFile(handle, data, (uint)USB_REPORT_LEN, out bytesRead, IntPtr.Zero);
-                    }
-                    catch (Exception ex)
-                    {
-                        success = false;
-                        LastErrorMessage = "ReadFile exception: " + ex.Message;
-                    }
+                    success = ReadFile(handle, data, (uint)USB_REPORT_LEN, out bytesRead, IntPtr.Zero);
                 }
                 if (!success)
                     LastErrorMessage = GetIOError();
