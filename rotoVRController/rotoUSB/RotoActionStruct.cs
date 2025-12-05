@@ -6,6 +6,12 @@ using System.Text;
 using System.Threading.Tasks;
 using static MaterialSkin.Controls.MaterialSlider;
 
+
+
+
+
+
+
 namespace rotoUSB
 {
     internal class RotoActionStruct
@@ -97,7 +103,7 @@ namespace rotoUSB
             lock (_lockChairStatus)
             {
                 _targetRumblePower = Clamp(power, 0, 100);
-                _targetRumbleDurationMS = Clamp(milliSeconds, 0, 65535);
+                _targetRumbleDurationMS = Clamp(milliSeconds, 0, 25500);
                 _isRumbleChanged = true;
             }
         }

@@ -5,23 +5,8 @@ using System.Runtime.InteropServices;
 
 namespace rotoUSB
 {
-    public interface IUSBNative
-    {
-        string LastErrorMessage { get; }
-
-        void CloseUSBDevice(nint device);
-        bool ConfigUSBDevice(nint usbDevice);
-        bool LoadLibrary();
-        nint OpenUSBDevice();
-        bool ReadHIDPacket(nint handle, byte[] data, int length);
-        string ToHexString(byte[] b, long offset, long size);
-        //void USBSpeedTest();
-        bool WritePacket(nint handle, byte[] data);
-    }
-
-
     // Static class for interacting with USB-HID devices using native Windows API calls
-    public static class USBNative //: IUSBNative
+    public static class USBNative
     {
         // USB-HID device Vendor ID (VID) and Product ID (PID) for the Roto device
         public const int VID = 0x04D9;
@@ -372,19 +357,11 @@ namespace rotoUSB
             bool success = false;
             uint bytesRead = 0;
 
-            if (handle != IntPtr.Zero && data != null && data.Length >= length)
+            if (handle != IntPtr.Zero && data != null && data.Length >= USB_REPORT_LEN)
             {
                 lock (_lockUSBR)
                 {
-                    try
-                    {
-                        success = ReadFile(handle, data, (uint)length, out bytesRead, IntPtr.Zero);
-                    }
-                    catch (Exception ex)
-                    {
-                        success = false;
-                        LastErrorMessage = "ReadFile exception: " + ex.Message;
-                    }
+                    success = ReadFile(handle, data, (uint)USB_REPORT_LEN, out bytesRead, IntPtr.Zero);
                 }
                 if (!success)
                     LastErrorMessage = GetIOError();

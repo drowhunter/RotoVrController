@@ -29,7 +29,7 @@ namespace rotoUSB
         // no use
         private int _lastTargetChairDegree;
 
-
+ 
         private bool _isMotorChanged;
         private bool _isRumbleChanged;
 
@@ -59,13 +59,13 @@ namespace rotoUSB
         }
 
 
-        private static int Clamp(int value, int min, int max)
+        private static  int Clamp(int value, int min, int max)
         {
             return (value < min) ? min : (value > max) ? max : value;
         }
 
 
-
+       
         public void UpdateChairSpeed(int speed, int degree)
         {
             lock (_lockChairStatus)
@@ -73,8 +73,8 @@ namespace rotoUSB
                 _targetChairSpeed = speed;
                 _targetChairDegree = degree;
 
-                Console.WriteLine("chair speed " + speed + " and degree " + degree);
-
+                Console.WriteLine("chair speed "+ speed + " and degree " + degree);
+                
                 _isMotorChanged = true;
             }
         }
@@ -97,7 +97,7 @@ namespace rotoUSB
             lock (_lockChairStatus)
             {
                 _targetRumblePower = Clamp(power, 0, 100);
-                _targetRumbleDurationMS = Clamp(milliSeconds, 0, 65535);
+                _targetRumbleDurationMS = Clamp(milliSeconds, 0, 25500);
                 _isRumbleChanged = true;
             }
         }
@@ -111,7 +111,7 @@ namespace rotoUSB
 
             bool valueChanged = false;
 
-
+             
 
             //Console.WriteLine($"GetRotoAction   {DateTime.Now} - 1");
             lock (_lockChairStatus)
@@ -132,9 +132,9 @@ namespace rotoUSB
                 if (_isMotorChanged)
                 {
                     //_targetChairSpeed = 0;
-                    // _targetChairDegree = 0;
+                   // _targetChairDegree = 0;
 
-                    // _targetObjectDegree = 0;
+                   // _targetObjectDegree = 0;
                     _lastTargetChairDegree = objectDegree;
 
                     _isMotorChanged = false;
@@ -145,10 +145,10 @@ namespace rotoUSB
                 {
                     _targetRumblePower = -1;
                     _targetRumbleDurationMS = 0;
-
+              
                     _isRumbleChanged = false;
                 }
-
+        
             }
             //Console.WriteLine($"GetRotoAction   {DateTime.Now} - 2");
 

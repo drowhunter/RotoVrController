@@ -1,29 +1,50 @@
-﻿using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
+﻿/*
+ * 
+ *  Edward Chan
+ * 
+ *  Revision history:
+ * 
+ *          V1.1 -   Add  Event delegate to support  Safety Sensor / Emergency Button triggered event
+ *                   Support resume to previous mode or  default IDLE mode
+ *               -   Add SetV2BaseMode() function with an option to disable the BASE running mode sound
+ *               -   Clarify the rumble duration in term of 100ms per unit 
+ *               -   update SetObjectFollowDegree() with speed option
+ *               
+ * 
+ */
 
+
+
+using System.Collections.Concurrent;
+using System.Diagnostics;
 
 
 
 namespace rotoUSB
 {
-    public class RotoChair : IRotoChair
+    public class RotoChair
     {
-#if !DEBUG
+
         public bool _isConsoleDebug = false;
-#else
-        public bool _isConsoleDebug = true;
-#endif
+
         // =============== Constant ===============
         // Constant for  Roto VR Chair Run Mode status 
-        public const int MODE_IDLE = 0x00;
+        public const  int MODE_IDLE = 0x00;
         private const int MODE_CAL = 0x01;           // HT is calibrating
 
-        public const int MODE_OBJECT_FOLLOW = 0x02;  // Object follow mode
-        public const int MODE_FREE = 0x03;           // Free mode
-        public const int MODE_COCKPIT = 0x04;        // Cockpit mode
+        public const  int MODE_OBJECT_FOLLOW = 0x02;  // Object follow mode
+        public const  int MODE_FREE = 0x03;           // Free mode
+        public const  int MODE_COCKPIT = 0x04;        // Cockpit mode
+
+
+
+        public const  int ERROR_EMERGENCY_STOP = 0x80;   //  v1.1:   Wireless Emergency stop button triggerd
+        public const int ERROR_NONE = 0x00;
+
 
         private const int MODE_APP = 0x05;           // Android/Quest APP control mode 
+
+      
 
 
         // Constant for   Roto VR Chair connection status 
@@ -40,10 +61,15 @@ namespace rotoUSB
         private const int MODE_BASE_ROTATION_STOP = 0x20;       //   Base self-rotation stop (Base Move)
         private const int MODE_MOTOR_STALL_STOP = 0x40;         //   Motor Stall             (Hold)
 
+
+     
+
+
+
         private const int DEAFAULT_COCKPIT_DEGREE = 30;
         private const int DEAFAULT_HT_SENSITIVTY = 30;
 
-
+       
         // USB packet constant
         private const int HID_REPORT_LEN = USBNative.USB_REPORT_LEN;
         private const int ROTO_PACKET_LEN = USBNative.ROTO_PACKET_LEN;
@@ -69,6 +95,17 @@ namespace rotoUSB
 
 
 
+        // ============= event delegate ===========
+
+        // run mode event
+        public delegate void RunModeChangeHandler(int newRunMode);
+        public event RunModeChangeHandler RunModeChanged;
+
+
+        // error mode event
+        public delegate void ErrorModeHandler(int errorMode);
+        public event ErrorModeHandler ErrorModeChanged;
+
 
 
 
@@ -77,9 +114,9 @@ namespace rotoUSB
         private CancellationTokenSource _ctsRead = null;
         private bool _isReadingLoop = false;
 
-        private byte[] _usbReadPacket = new byte[ROTO_PACKET_LEN];
-        private bool _isPacketInit = false;
-        private int _curReadPacketSize = 0;
+        private byte[] _usbReadPacket     = new byte[ROTO_PACKET_LEN];
+        private bool   _isPacketInit      = false;
+        private int    _curReadPacketSize = 0;
 
 
         // Write USB precision timer  
@@ -89,6 +126,14 @@ namespace rotoUSB
 
 
         private bool isSettingZero = false;
+
+
+        // v1.1 new features
+        private bool enableModeResume = false;
+        private bool skipBASESound    = false;
+        private int lastRunMode = -1;
+        private int lastErrorMode = 0;
+
 
         // Logger for writing debug logs to console and file
         private StreamWriter logger = null;
@@ -101,7 +146,6 @@ namespace rotoUSB
 
         // Public static property to access the instance
         public static RotoChair Instance => instance.Value;
-
 
         // Private constructor for singleton pattern
         private RotoChair()
@@ -134,8 +178,8 @@ namespace rotoUSB
             return USBNative.LastErrorMessage;
         }
 
-        // ============== Helper functions =============
 
+        // ============== Helper functions =============
 
         // Computes checksum for a message buffer
         private static byte ComputeCheckSum(byte[] message)
@@ -171,7 +215,6 @@ namespace rotoUSB
 
 
         // ===============  USB command  ===============
-
         public static int Clamp(int value, int min, int max)
         {
             return (value < min) ? min : (value > max) ? max : value;
@@ -186,7 +229,7 @@ namespace rotoUSB
             byte[] data = new byte[ROTO_PACKET_LEN] { 0xF1, (byte)'A', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
             data[CHECKSUM_INDEX] = ComputeCheckSum(data);
             //EnqueueBaseCommand(data);
-            sendBaseCommand(data);
+            SendBaseCommand(data);
         }
 
 
@@ -197,8 +240,7 @@ namespace rotoUSB
         {
             byte[] data = new byte[ROTO_PACKET_LEN] { 0xF1, (byte)'B', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
             data[CHECKSUM_INDEX] = ComputeCheckSum(data);
-
-
+   
             //WriteLog("set zero ...");
             isSettingZero = true;
 
@@ -216,16 +258,14 @@ namespace rotoUSB
             byte[] data = new byte[ROTO_PACKET_LEN] { 0xF1, (byte)'Z', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
             data[CHECKSUM_INDEX] = ComputeCheckSum(data);
             // EnqueueBaseCommand(data);
-            sendBaseCommand(data);
+            SendBaseCommand(data);
         }
 
 
         // Enqueues a USB command packet for sending
         private void EnqueueBaseCommand(byte[] message)
         {
-
             _sendQueue.Enqueue(message);
-
         }
 
 
@@ -256,19 +296,13 @@ namespace rotoUSB
             _usbDeviceW = IntPtr.Zero;
         }
 
+
         // Closes the USB read task
         private void CloseReadTask()
         {
-            if (_ctsRead == null)
-                return;
-
             Console.WriteLine("Close USB Read Task");
-            if (_usbDeviceR != IntPtr.Zero && !_ctsRead.IsCancellationRequested)
+            if (_usbDeviceR != IntPtr.Zero)
             {
-                // check if _ctsRead is already disposed
-
-
-
                 _ctsRead.Cancel();
                 _ctsRead.Dispose(); // Clean up
             }
@@ -279,7 +313,6 @@ namespace rotoUSB
         // Disconnects the chair and cleans up resources
         public void Disconnect()
         {
-
 
             CloseReadTask();
             CloseWriteTask();
@@ -297,8 +330,6 @@ namespace rotoUSB
         // Connects to the Roto VR Chair
         public bool Connect()
         {
-
-
 
             bool result = false;
 
@@ -319,28 +350,8 @@ namespace rotoUSB
 
                     // Create new reading task
                     _ctsRead = new CancellationTokenSource();
-
-                    
-                    var ts = new ThreadStart(() =>
-                    {
-                        try
-                        {
-                            Thread.CurrentThread.IsBackground = true;
-                            Thread.CurrentThread.Name = "USB Read Thread";
-                            ReadLoop(_ctsRead.Token);
-                        }
-                        catch{
-                            var err = Marshal.GetLastWin32Error();
-                        }
-                    });
-
-                    Thread.Sleep(100);
-
-                    var readThread = new Thread(ts);
-                    readThread.Start();
-
                     // Start the reading loop in a background task
-                    // Task.Run(() => ReadLoop(_ctsRead.Token));
+                    Task.Run(() => ReadLoop(_ctsRead.Token));
 
 
 
@@ -352,10 +363,7 @@ namespace rotoUSB
                     _sendQueue.Clear();
                     _writeTimer.Start(WriteTimerTick, 10);
 
-
-
                     result = true;
-
                 }
 
                 if (!result)
@@ -388,22 +396,36 @@ namespace rotoUSB
         }
 
         // Sets the object follow degree for tracking
-        public void SetObjectFollowDegree(int degree)
+        public void SetObjectFollowDegree(int degree, int speed)
         {
             if (_rotoStatus.RunMode == MODE_OBJECT_FOLLOW)
             {
-                chairAction.UpdateObjectFollowDegree(_rotoStatus.MaxPowerLimit, degree);
+                chairAction.UpdateObjectFollowDegree(speed, degree);
             }
         }
+
 
         // Activates chair rumble effect
         public void SetRumble(int power, ushort milliSeconds)
         {
             if (_rotoStatus.RunMode != MODE_IDLE)
             {
-                chairAction.UpdateRumble(power, milliSeconds);
+                chairAction.UpdateRumble(power, Clamp(milliSeconds, 0, 25400));
             }
         }
+
+         
+
+        // Keep chair rumbling 
+        public void KeepRumbling(int power)
+        {
+            if (_rotoStatus.RunMode != MODE_IDLE)
+            {
+                chairAction.UpdateRumble(power, 25500);
+            }
+        }
+
+
 
         // Stops the chair rumble effect
         public void StopRumble()
@@ -416,7 +438,7 @@ namespace rotoUSB
 
 
         // Updates chair actions based on current status
-        private bool UpdateChairAction()
+        public bool UpdateChairAction()
         {
             bool success = true;
 
@@ -432,18 +454,20 @@ namespace rotoUSB
             int objectAngle;
             int rumblePower;
             int rumbleDurationMS;
+            
             int chairAngle;
 
 
 
             bool isValueChange = chairAction.GetRotoAction(out motorChanged, out chairSpeed, out objectAngle, out chairAngle, out rumbleChanged, out rumblePower, out rumbleDurationMS);
 
-            //Console.WriteLine("Chair degree: " + objectAngle);
+
+            Console.WriteLine("Chair degree: " + objectAngle);
 
             // Only object following provides realtime chair angle synchronization
             if (_rotoStatus.RunMode == MODE_OBJECT_FOLLOW)
             {
-
+        
                 if (isSettingZero == false)
                 {
                     enableRumble = rumbleChanged;
@@ -463,9 +487,8 @@ namespace rotoUSB
                 if (isValueChange)
                 {
 
-
                     //Console.WriteLine("Move left?"+ isTurnLeft + " chair angle to " + chairAngle);
-                    success = moveChairByAngle(enableMotor, isTurnLeft, chairAngle, Math.Abs(chairSpeed), enableRumble, rumblePower, rumbleDurationMS);
+                    success = MoveChairByAngle(enableMotor, isTurnLeft, chairAngle, Math.Abs(chairSpeed), enableRumble, rumblePower, rumbleDurationMS);
                 }
             }
 
@@ -489,7 +512,7 @@ namespace rotoUSB
                     if (_sendQueue.TryDequeue(out byte[] sendControlPacket))
                     {
 
-                        success = sendBaseCommand(sendControlPacket);
+                        success = SendBaseCommand(sendControlPacket);
                     }
                     else
                         success = UpdateChairAction();
@@ -507,7 +530,7 @@ namespace rotoUSB
 
 
         // Sends a base command to the chair
-        private bool sendBaseCommand(byte[] sendPacket)
+        private bool SendBaseCommand(byte[] sendPacket)
         {
             bool success = false;
 
@@ -606,6 +629,8 @@ namespace rotoUSB
 
             bool result = false;
             byte[] data = new byte[ROTO_PACKET_LEN] { 0xF1, (byte)'M', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+            int rumbleDuration100ms = Clamp(duration / 100, 0, 255);
+
 
             if (enableMotor)
             {
@@ -620,23 +645,23 @@ namespace rotoUSB
             {
                 data[7] = (byte)0x01; // enable rumble
                 data[8] = (byte)Clamp(rumblePower, 0, 100);
-                data[9] = (byte)duration;
+                data[9] = (byte)rumbleDuration100ms;  // duration in 100ms unit
             }
             data[CHECKSUM_INDEX] = ComputeCheckSum(data);
 
-
-            result = sendBaseCommand(data);
+            result = SendBaseCommand(data);
 
             return result;
         }
 
 
         // Sends USB command to move chair with rumbling
-        private bool moveChairByAngle(bool enableMotor, bool isTurnLeft, int chairAngle, int power, bool enableRumble, int rumblePower, int duration)
+        private bool MoveChairByAngle(bool enableMotor, bool isTurnLeft, int chairAngle, int power, bool enableRumble, int rumblePower, int duration)
         {
             bool result = false;
 
             byte[] data = new byte[ROTO_PACKET_LEN] { 0xF1, (byte)'M', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+            int rumbleDuration100ms = Clamp(duration / 100, 0, 255);
 
 
             if (enableMotor)
@@ -658,49 +683,79 @@ namespace rotoUSB
             {
                 data[7] = (byte)0x01; // enable rumble
                 data[8] = (byte)Clamp(rumblePower, 0, 100);
-                data[9] = (byte)duration;
+                data[9] = (byte)rumbleDuration100ms;  // duration in 100ms unit
             }
 
             data[CHECKSUM_INDEX] = ComputeCheckSum(data);
 
-            result = sendBaseCommand(data);
+            result = SendBaseCommand(data);
 
             return result;
         }
 
+        // Set the BASE mode sound indication
+        // isEnabled = true, BASE will play the corresponding beep beep sound  when mode changed by Window device
+        //           = false, BASE will keep silence when mode changed by  Window device
+        public void EnableModeSound(bool isEnabled)
+        {
+            skipBASESound = !isEnabled;
+        }
+
+        // Set the BASE behavior when emergency stop / safety button resume to normal condition
+        // isEnabled = true,  BASE will resume back to its previous mode
+        //           = false, BASE will return to IDLE mode
+        public void EnableModeResume(bool isEnabled)
+        {
+            enableModeResume = isEnabled;
+        }
 
 
+
+        
 
 
         // Sets the chair's operating mode
         private bool SetV2BaseMode(int newMode, bool motorHardStop, bool enableTracker)
         {
             bool success = false;
-
             // for debugging
-            //_rotoStatus.RunMode = newMode;
+            // _rotoStatus.RunMode = newMode;
 
             if (_usbDeviceW != IntPtr.Zero)
             {
-
+                byte baseConfig = 0;
                 byte[] runModePacket = new byte[ROTO_PACKET_LEN] { 0xF1, (byte)'S', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
-                runModePacket[2] = (byte)newMode;
-                runModePacket[3] = (byte)(motorHardStop ? 1 : 0);
 
+                runModePacket[2] =  (byte)newMode;
+                runModePacket[3] =  (byte)(motorHardStop ? 1 : 0);
 
-                runModePacket[9] = (byte)((cockpitAngleLimit & 0xFF00) >> 8);
-                runModePacket[10] = (byte)((cockpitAngleLimit & 0xFF));
+                runModePacket[9] =  (byte) ((cockpitAngleLimit & 0xFF00) >> 8);
+                runModePacket[10] = (byte) ((cockpitAngleLimit & 0xFF));
 
+                runModePacket[11] = (byte) RESERVED_BYTE;
+                runModePacket[12] = (byte) POWER_LIMIT;
+                runModePacket[14] = (byte) (enableTracker    ? 1 : 0);
 
-                runModePacket[11] = (byte)RESERVED_BYTE;
-                runModePacket[12] = (byte)POWER_LIMIT;
+                // [15]  reserved for [report interval]
+                if (enableModeResume ) 
+                {
+                    //  0x00 - emergency stop resume to IDLE,   0x01 - emergency stop resume to previous mode without any sound
+                    baseConfig = (byte) (baseConfig | (1 << 7));
+                }
 
-                runModePacket[14] = (byte)(enableTracker ? 1 : 0);
+                if (skipBASESound)  
+                {
+                    // runModePacket[16] = (byte) (skipBASESound    ? 1 : 0);    //  0x00 - default change mode has sound,  default change mode has no sound
+                    baseConfig = (byte) (baseConfig | (1 << 6));
+                }
 
+                runModePacket[16] = baseConfig;
                 runModePacket[CHECKSUM_INDEX] = ComputeCheckSum(runModePacket);
 
+
                 EnqueueBaseCommand(runModePacket);
+
 
                 success = true;
             }
@@ -709,13 +764,14 @@ namespace rotoUSB
 
 
 
+
+
+
         // Sets the chair to object follow mode
         public bool SetObjectFollowMode()
         {
-
             SetZeroBaseCommand();
             return SetV2BaseMode(MODE_OBJECT_FOLLOW, false, ENABLE_HT);
-
         }
 
         // Sets the chair to idle mode
@@ -727,9 +783,7 @@ namespace rotoUSB
         // Sets the chair to free mode
         public bool SetFreeMode()
         {
-
             return SetV2BaseMode(MODE_FREE, false, ENABLE_HT);
-
         }
 
 
@@ -740,6 +794,10 @@ namespace rotoUSB
             cockpitAngleLimit = Clamp(cockpitLimit, 60, 140);
             return SetV2BaseMode(MODE_COCKPIT, false, ENABLE_HT);
         }
+
+
+
+
 
 
         // Parses chair settings from received USB packet
@@ -763,6 +821,34 @@ namespace rotoUSB
 
             bool htEnabled = ((data[14] & 0x01) == 1) ? true : false;
 
+
+            // error mode delegate
+            if (errorMode != lastErrorMode)
+            {
+                if (ErrorModeChanged != null) 
+                    ErrorModeChanged(errorMode);
+                lastErrorMode = errorMode;
+            }
+
+
+            // run mode delegate
+            if (runMode != lastRunMode)
+            {
+                if (RunModeChanged != null)
+                {
+                    if (runMode == RotoChair.MODE_IDLE)
+                    {   
+                        ResetChairMovement();
+                    }
+                    RunModeChanged(runMode);
+                }
+                lastRunMode = runMode;
+            }
+
+
+
+
+
             lock (_statusLock)
             {
                 _rotoStatus.USBConnected = true;
@@ -772,14 +858,12 @@ namespace rotoUSB
                 _rotoStatus.HTEnabled = htEnabled;
                 _rotoStatus.HTSensitivityDegree = htSensitivityDegree;
 
-
                 // _rotoStatus.BaseDegree = baseDegree;
                 _rotoStatus.FirmwareVersion = firmwareVersion;
                 _rotoStatus.ErrorMode = errorMode;
                 _rotoStatus.RunMode = runMode;
                 _rotoStatus.MaxPowerLimit = maxPower;
                 _rotoStatus.CockpitDegreeLimit = cockpitDegreeLimit;
-
 
                 // for latest firmware, we upgrade the base degree sensor accuracy to 12-bit resolution
                 if (firmwareVersion > 0x20)
@@ -794,14 +878,13 @@ namespace rotoUSB
                     _rotoStatus.BaseDegree = (int)((data[5] << 8) + data[6]);
                 }
             }
-
         }
 
 
 
 
         // Parses incoming USB packets
-        private void parseUSBPacket(byte[] data)
+        private void ParseUSBPacket(byte[] data)
         {
             byte checkSum = ComputeCheckSum(data);
             if (data[0] == 0xF1 && data[ROTO_PACKET_LEN - 1] == checkSum)
@@ -863,48 +946,40 @@ namespace rotoUSB
         private bool ReadPacket(byte[] buffer, int reportLen)
         {
             bool completePacketRead = false;
-            try
+
+            // read out a USB-HID packet 
+            if (!USBNative.ReadHIDPacket(_usbDeviceR, buffer, reportLen))
             {
-                // read out a USB-HID packet 
-                if (!USBNative.ReadHIDPacket(_usbDeviceR, buffer, reportLen))
-                {
-                    //WriteLog("...");
-                }
-                else
-                {
-                    // create Start of Packet
-                    if (buffer[2] == 0xF1)
-                    {
-                        _isPacketInit = true;
-                        Array.Clear(_usbReadPacket, 0, _usbReadPacket.Length);
-                        _curReadPacketSize = buffer[1];
-                        Array.Copy(buffer, 2, _usbReadPacket, 0, _curReadPacketSize);
-                    }
-                    else if (_isPacketInit)  // concate pending packet 
-                    {
-                        int startIndex = _curReadPacketSize;
-                        _curReadPacketSize += buffer[1];
-                        int copyLength = Math.Min(buffer[1], _usbReadPacket.Length - startIndex);
-                        Array.Copy(buffer, 2, _usbReadPacket, startIndex, copyLength);
-
-                        // if a full packet complete, parse the value
-                        if (_curReadPacketSize >= 19)
-                        {
-                            _isPacketInit = false;
-
-                            // Console.WriteLine("RX Buffer: " + buffer[0]);
-                            parseUSBPacket(_usbReadPacket);
-                            completePacketRead = true;
-                        }
-                    }
-
-                    // WriteLog("==========>  RX Buffer: " + USBNative.ToHexString(buffer,0, reportLen)) ;
-
-                }
+                //WriteLog("...");
             }
-            catch (Exception ex)
+            else
             {
-                WriteLog("Read USB Exception: " + ex.ToString());
+                // create Start of Packet
+                if (buffer[2] == 0xF1)
+                {
+                    _isPacketInit = true;
+                    Array.Clear(_usbReadPacket, 0, _usbReadPacket.Length);
+                    _curReadPacketSize = buffer[1];
+                    Array.Copy(buffer, 2, _usbReadPacket, 0, _curReadPacketSize);
+                }
+                else if (_isPacketInit)  // concate pending packet 
+                {
+                    int startIndex = _curReadPacketSize;
+                    _curReadPacketSize += buffer[1];
+                    int copyLength = Math.Min(buffer[1], _usbReadPacket.Length - startIndex);
+                    Array.Copy(buffer, 2, _usbReadPacket, startIndex, copyLength);
+
+                    // if a full packet complete, parse the value
+                    if (_curReadPacketSize >= 19)
+                    {
+                        _isPacketInit = false;
+
+                        // Console.WriteLine("RX Buffer: " + buffer[0]);
+                        ParseUSBPacket(_usbReadPacket);
+                        completePacketRead = true;
+                    }
+                }
+               // WriteLog("==========>  RX Buffer: " + USBNative.ToHexString(buffer,0, reportLen)) ;
             }
 
             return completePacketRead;
