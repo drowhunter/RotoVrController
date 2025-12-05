@@ -126,8 +126,7 @@ namespace rotoUSB
         private HighPrecisionTimer _writeTimer = new HighPrecisionTimer();
         private ConcurrentQueue<byte[]> _sendQueue = new ConcurrentQueue<byte[]>();
         private IRotoActionStruct chairAction = null;
-
-
+        
         private bool isSettingZero = false;
 
 
@@ -138,14 +137,14 @@ namespace rotoUSB
         private int lastErrorMode = 0;
 
 
-        // Logger for writing debug logs to console and file
-        private StreamWriter logger = null;
-
+       
+        private readonly IWriteLogger<USBNative> logger;
 
         // Private constructor for singleton pattern
-        public RotoChair(IUSBNative usbNative, IRotoActionStruct chairAction)
+        public RotoChair(IUSBNative usbNative, IRotoActionStruct chairAction, IWriteLogger<USBNative> logger)
         {
             this.chairAction = chairAction;
+            this.logger = logger;
             _usbNative = usbNative;
         }
 
@@ -193,19 +192,8 @@ namespace rotoUSB
 
         // write debug logs to console and file
         private void WriteLog(string log)
-        {
-            if (_isConsoleDebug)
-            {
-                Console.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " " + log);
-
-
-                if (logger == null)
-                    logger = new StreamWriter(DateTime.Now.ToString("yyyy-MM-dd ") + "log.txt", append: true);
-                logger.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " " + log);
-                logger.Flush();
-
-
-            }
+        {            
+            logger.WriteLog(log);
         }
 
 
@@ -324,47 +312,61 @@ namespace rotoUSB
 
 
         // Connects to the Roto VR Chair
-        public bool Connect()
+        public bool Connect(bool reConnect = false)
         {
 
             bool result = false;
 
-            if (_usbDeviceR == IntPtr.Zero || _usbDeviceW == IntPtr.Zero)
+            if (_usbDeviceR != IntPtr.Zero && reConnect)
             {
-                _usbDeviceR = _usbNative.OpenUSBDevice();
-                _usbDeviceW = _usbNative.OpenUSBDevice();
-                if (_usbDeviceR != IntPtr.Zero && _usbDeviceW != IntPtr.Zero)
-                {
-                    // Enable USB-HID to 115200 baud rate
-                    bool success = _usbNative.ConfigUSBDevice(_usbDeviceW);
-                    WriteLog($"Set Feature success: {success}");
+                WriteLog("RotoChair already connected.");
+                // clsoe the device first
 
-                    stopwatch = Stopwatch.StartNew();
-
-                    //_readThread = new Thread(baseReadLoop);
-                    // _readThread.Start();
-
-                    // Create new reading task
-                    _ctsRead = new CancellationTokenSource();
-                    // Start the reading loop in a background task
-                    Task.Run(() => ReadLoop(_ctsRead.Token));
-
-
-
-                    Thread.Sleep(10);
-
-                    // connect the USB device and check the chair hardware version
-                    ConnectRoto();
-
-                    _sendQueue.Clear();
-                    _writeTimer.Start(WriteTimerTick, 10);
-
-                    result = true;
-                }
-
-                if (!result)
-                    WriteLog(GetUSBError());
+                CloseReadTask();
             }
+
+            
+            if (_usbDeviceR == IntPtr.Zero)
+                _usbDeviceR = _usbNative.OpenUSBDevice();
+
+            if (_usbDeviceW == IntPtr.Zero) 
+                _usbDeviceW = _usbNative.OpenUSBDevice();
+
+            if (_usbDeviceR != IntPtr.Zero && _usbDeviceW != IntPtr.Zero)
+            {
+                // Enable USB-HID to 115200 baud rate
+                bool success = _usbNative.ConfigUSBDevice(_usbDeviceW);
+                WriteLog($"Set Feature success: {success}");
+
+                stopwatch = Stopwatch.StartNew();
+
+                //_readThread = new Thread(baseReadLoop);
+                // _readThread.Start();
+
+                // Create new reading task
+                _ctsRead = new CancellationTokenSource();
+                // Start the reading loop in a background task
+                Task.Run(() => { 
+                    Thread.CurrentThread.IsBackground = true;
+                    Thread.CurrentThread.Name = "RotoChair USB Read Thread";
+                    ReadLoop(_ctsRead.Token);
+                });
+
+
+                Thread.Sleep(10);
+
+                // connect the USB device and check the chair hardware version
+                ConnectRoto();
+
+                _sendQueue.Clear();
+                _writeTimer.Start(WriteTimerTick, 10);
+
+                result = true;
+            }
+
+            if (!result)
+                WriteLog(GetUSBError());
+            
             return result;
         }
 
@@ -759,8 +761,7 @@ namespace rotoUSB
         }
 
 
-
-
+       
 
 
         // Sets the chair to object follow mode

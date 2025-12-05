@@ -202,12 +202,12 @@ namespace rotoUSB
             bool success = false;
 
 
-            if (!USBNative._isLibaryLoaded)
+            if (!_isLibaryLoaded)
             {
 
                 string basePath = AppDomain.CurrentDomain.BaseDirectory;
                 string platformFolder = Environment.Is64BitProcess ? "Libs\\x64" : "Libs\\x86";
-                string dllFullPath = System.IO.Path.Combine(basePath, platformFolder, "HIDApi.dll");
+                string dllFullPath = Path.Combine(basePath, platformFolder, "HIDApi.dll");
                 //  Console.WriteLine(dllFullPath);
 
                 if (File.Exists(dllFullPath))
@@ -223,7 +223,7 @@ namespace rotoUSB
                             if (libraryName == "HIDApi.dll")
                             {
                                 NativeLibrary.TryLoad(dllFullPath, out handle);
-                                USBNative._isLibaryLoaded = true;
+                                _isLibaryLoaded = true;
                             }
                             return handle;
                         });
@@ -251,7 +251,7 @@ namespace rotoUSB
             IntPtr usbDevice = IntPtr.Zero;
 
             // synchronous mode
-            usbDevice = USBNative.OpenFirstHIDDevice(VID, PID, 0x00, 0x00, true);
+            usbDevice = OpenFirstHIDDevice(VID, PID, 0x00, 0x00, true);
 
             if (usbDevice == IntPtr.Zero)
             {

@@ -15,6 +15,7 @@ namespace Microsoft.Extensions.DependencyInjection
             services.AddSingleton<IRotoChair, RotoChair>();
             services.AddSingleton<IRotoActionStruct, RotoActionStruct>();
             services.AddTransient<IUSBNative, USBNative>(); 
+            services.AddTransient(typeof(IWriteLogger<>), typeof(WriteLogger<>));
             return services;
         }
     }
